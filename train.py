@@ -15,7 +15,8 @@ DEVICE = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 # Paths
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_CSV_PATH = os.path.join(SCRIPT_DIR, 'data/processed_reports.csv')
+TRAIN_CSV_PATH = os.path.join(SCRIPT_DIR, 'data/train.csv')
+VAL_CSV_PATH = os.path.join(SCRIPT_DIR, 'data/val.csv')
 VOCAB_PATH = os.path.join(SCRIPT_DIR, 'data/vocab.pkl')
 MODEL_PATH = os.path.join(SCRIPT_DIR, 'models/')
 
@@ -46,9 +47,6 @@ def main():
         transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
     ])
 
-    # Build data loader
-    dataset = XRayDataset(data_csv_path=DATA_CSV_PATH, vocab=vocab, transform=transform)
-    
     # Custom collate_fn to handle padding
     def collate_fn(data):
         data.sort(key=lambda x: len(x[1]), reverse=True)
@@ -61,7 +59,12 @@ def main():
             targets[i, :end] = cap[:end]
         return images, targets, lengths
 
-    data_loader = DataLoader(dataset=dataset, batch_size=BATCH_SIZE, shuffle=True, collate_fn=collate_fn)
+    # Build data loaders
+    train_dataset = XRayDataset(data_csv_path=TRAIN_CSV_PATH, vocab=vocab, transform=transform)
+    val_dataset = XRayDataset(data_csv_path=VAL_CSV_PATH, vocab=vocab, transform=transform)
+
+    train_loader = DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=True, collate_fn=collate_fn)
+    val_loader = DataLoader(dataset=val_dataset, batch_size=BATCH_SIZE, shuffle=False, collate_fn=collate_fn)
 
     # --- 2. Build the models ---
     encoder = EncoderCNN(EMBED_SIZE).to(DEVICE)
@@ -73,11 +76,13 @@ def main():
     optimizer = torch.optim.Adam(params, lr=LEARNING_RATE)
 
     # --- 4. Train the models ---
-    total_step = len(data_loader)
+    total_step = len(train_loader)
     print(f"Starting training on {DEVICE}...")
 
     for epoch in range(NUM_EPOCHS):
-        for i, (images, captions, lengths) in enumerate(data_loader):
+        encoder.train()
+        decoder.train()
+        for i, (images, captions, lengths) in enumerate(train_loader):
             images = images.to(DEVICE)
             captions = captions.to(DEVICE)
 
@@ -85,9 +90,6 @@ def main():
             features = encoder(images)
             outputs = decoder(features, captions)
 
-            # Pack padded sequence so we don't compare padded outputs
-            # The output from the model and the target captions are packed
-            # to remove padding before calculating loss.
             packed_outputs = nn.utils.rnn.pack_padded_sequence(outputs, lengths, batch_first=True)[0]
             targets = nn.utils.rnn.pack_padded_sequence(captions, lengths, batch_first=True)[0]
 
@@ -101,6 +103,26 @@ def main():
             # Print log info
             if i % 100 == 0:
                 print(f'Epoch [{epoch+1}/{NUM_EPOCHS}], Step [{i}/{total_step}], Loss: {loss.item():.4f}, Perplexity: {torch.exp(loss).item():5.4f}')
+
+        # --- 5. Validate the model ---
+        encoder.eval()
+        decoder.eval()
+        val_loss = 0
+        with torch.no_grad():
+            for images, captions, lengths in val_loader:
+                images = images.to(DEVICE)
+                captions = captions.to(DEVICE)
+                features = encoder(images)
+                outputs = decoder(features, captions)
+                
+                packed_outputs = nn.utils.rnn.pack_padded_sequence(outputs, lengths, batch_first=True)[0]
+                targets = nn.utils.rnn.pack_padded_sequence(captions, lengths, batch_first=True)[0]
+                
+                loss = criterion(packed_outputs, targets)
+                val_loss += loss.item()
+        
+        val_loss /= len(val_loader)
+        print(f'\nEpoch [{epoch+1}/{NUM_EPOCHS}], Validation Loss: {val_loss:.4f}, Validation Perplexity: {torch.exp(torch.tensor(val_loss)):5.4f}\n')
 
         # Save the model checkpoints
         torch.save(decoder.state_dict(), os.path.join(MODEL_PATH, f'decoder-{epoch+1}.ckpt'))

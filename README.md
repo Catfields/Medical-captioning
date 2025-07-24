@@ -78,3 +78,31 @@ python sample.py --image_path /path/to/your/image.png
 ```
 
 By default, it uses an image from the dataset. You can modify the path to test with your own images.
+
+## Training Details
+
+The model was trained with the following hyperparameters:
+
+- **Optimizer**: Adam
+- **Learning Rate**: 0.001
+- **Batch Size**: 16
+- **Number of Epochs**: 5
+- **Embedding Size**: 256
+- **Hidden LSTM Size**: 512
+- **LSTM Layers**: 1
+
+The dataset is split into training and validation sets, which are loaded from `data/train.csv` and `data/val.csv` respectively.
+
+## Evaluation Results
+
+The model was evaluated on the test set, and the following scores were obtained:
+
+| Metric  | Score  |
+|---------|--------|
+| Bleu_1  | 0.3373 |
+| Bleu_2  | 0.2386 |
+| Bleu_3  | 0.1679 |
+| Bleu_4  | 0.1228 |
+| METEOR  | 0.3438 |
+| ROUGE_L | 0.4116 |
+| CIDEr   | 0.0781 |

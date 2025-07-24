@@ -71,6 +71,8 @@ class Vocabulary:
         return [self.stoi.get(word, self.stoi["<UNK>"]) for word in text_tokens]
 
 
+from sklearn.model_selection import train_test_split
+
 # --- Main Execution ---
 if __name__ == '__main__':
     print("Starting data preprocessing...")
@@ -83,19 +85,33 @@ if __name__ == '__main__':
     data_df['tokens'] = data_df['impression'].apply(clean_text)
     print("Cleaned and tokenized impressions.")
 
-    # 3. Build Vocabulary
-    impressions = data_df['tokens'].tolist()
-    vocab = Vocabulary(freq_threshold=5) # Only include words that appear at least 5 times
-    vocab.build_vocabulary(impressions)
-    print(f"Built vocabulary with {len(vocab)} words.")
+    # 3. Split data into train, validation, and test sets
+    train_df, test_df = train_test_split(data_df, test_size=0.2, random_state=42)
+    val_df, test_df = train_test_split(test_df, test_size=0.5, random_state=42) # 0.2 * 0.5 = 0.1 for val and test
 
-    # 4. Save processed data and vocabulary
-    processed_reports_path = os.path.join(SCRIPT_DIR, 'data/processed_reports.csv')
+    print(f"Split data into {len(train_df)} training, {len(val_df)} validation, and {len(test_df)} test samples.")
+
+    # 4. Build Vocabulary on training data only
+    train_impressions = train_df['tokens'].tolist()
+    vocab = Vocabulary(freq_threshold=5) # Only include words that appear at least 5 times
+    vocab.build_vocabulary(train_impressions)
+    print(f"Built vocabulary with {len(vocab)} words based on the training set.")
+
+    # 5. Save processed data and vocabulary
+    train_path = os.path.join(SCRIPT_DIR, 'data/train.csv')
+    val_path = os.path.join(SCRIPT_DIR, 'data/val.csv')
+    test_path = os.path.join(SCRIPT_DIR, 'data/test.csv')
     vocab_path = os.path.join(SCRIPT_DIR, 'data/vocab.pkl')
-    data_df.to_csv(processed_reports_path, index=False)
+
+    train_df.to_csv(train_path, index=False)
+    val_df.to_csv(val_path, index=False)
+    test_df.to_csv(test_path, index=False)
+
     with open(vocab_path, 'wb') as f:
         pickle.dump(vocab, f)
 
     print("Preprocessing complete!")
-    print(f"Saved processed data to '{processed_reports_path}'")
+    print(f"Saved training data to '{train_path}'")
+    print(f"Saved validation data to '{val_path}'")
+    print(f"Saved test data to '{test_path}'")
     print(f"Saved vocabulary to '{vocab_path}'")
